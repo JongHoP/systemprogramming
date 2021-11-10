@@ -14,13 +14,15 @@ int main() {
 		perror ("fork failed");
 	}
 	
-	if(pid == 0) {
+	if(pid == 0) { 
+		printf("child\n");
 		printf("stop 4 seconds\n");
 		sleep(4); // stop 4seconds
 		exit(5); // exit not complete
 	}
 	
 	if((pid = wait(&status)) == -1) {
+		printf("parents waiting until child exit is complete");
 		perror("wait failed");
 		exit(2);
 	}
