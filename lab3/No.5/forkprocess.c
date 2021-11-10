@@ -20,7 +20,8 @@ int main() {
 	
 	else if (pid > 0) {
 		
-		printf("I'm the parent process. I'm return child's PID\n");
+		printf("I'm the parent process. I'm return child's PID.\n");
+		printf("childs PID is %d\n", pid);
 	}
 	
 	else{
