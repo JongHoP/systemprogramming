@@ -1,5 +1,5 @@
 #include<stdio.h>
-#include<stdilb.n>
+#include<stdlib.h>
 #include<string.h>
 #include<unistd.h>
 #include<time.h>
@@ -12,7 +12,7 @@
 #define MAX_MSG 5
 #define MAX_LOG 512
 
-pthread_mutex_t mutex; int idd;
+pthread_mutex_t mutex; int fd;
 mqd_t mq1, mq2;
 char send_buf[MSG_SIZE];
 char recv_buf[MSG_SIZE];
