@@ -36,8 +36,8 @@ int main(){
 		
 		printf("child: locked \n");
 		sleep(5);
-		printf("child:exiting \n");
 	}
+		printf("child:exiting \n");
 	
 	else if(pid > 0){
 		sleep(5);
