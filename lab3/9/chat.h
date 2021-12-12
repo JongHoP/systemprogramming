@@ -8,7 +8,7 @@
 #include<fcntl.h>
 #define MQ_1"/mq1"
 #define MQ_2"/mq2"
-#define MSG_MSGSIZE 256 
+#define MSG_SIZE 256 
 #define MAX_MSG 5
 #define MAX_LOG 512
 
@@ -16,7 +16,7 @@ pthread_mutex_t mutex; int fd;
 mqd_t mq1, mq2;
 char send_buf[MSG_SIZE];
 char recv_buf[MSG_SIZE];
-char log_buf[MSG_LOG];
+char log_buf[MAX_LOG];
 char *ptr='\0';
 
 time_t ltime;
@@ -33,7 +33,7 @@ void logg_f(char* str, char* user){
 	sprintf(log_buf,"[%s]%s:%s\n",ptr,user,str);
 	write(fd,log_buf,strlen(log_buf));
 	memset(log_buf,'\0',sizeof(log_buf));
-	pthread_mutex_unlock(&metex);
+	pthread_mutex_unlock(&mutex);
 }
 
 void *send_thread(void* args){
@@ -42,27 +42,27 @@ void *send_thread(void* args){
 		printf(">");
 		fgets(send_buf,sizeof(send_buf),stdin);
 		send_buf[strlen(send_buf)-1]='\0';
-		if(mq_send(*(mqd_f*)args,send_buf,strlen(send_buf),0)==-1){
-	perror("mq_send()");
-}
-else{
-	logg_f(send_buf,SEND);
-	if(strcmp(send_buf,"/q")==0){
-		printf("###Finish Chatt ###\n");
-		pthread_metex_destroy(&mutex);
-		close(fd);
-		mq_close(mq1);	
-		mq_close(mq2);
-		if(in_user){
-			mq_unlink(MQ_1);
-			mq_unlink(MQ_2);
+		if(mq_send(*(mqd_t*)args,send_buf,strlen(send_buf),0)==-1){
+			perror("mq_send()");
+		}			
+		else{
+			logg_f(send_buf,SEND);
+			if(strcmp(send_buf,"/q")==0){
+				printf("###Finish Chatt ###\n");
+				pthread_metex_destroy(&mutex);
+				close(fd);
+				mq_close(mq1);	
+				mq_close(mq2);
+				if(in_user){
+					mq_unlink(MQ_1);
+					mq_unlink(MQ_2);
 
+				}
+				exit(0);
+			}
+			printf("%s:%s\n",SEND,send_buf);
 		}
-		exit(0);
 	}
-	printf("%s:%s\n",SEND,send_buf);
-}
-}
 }
 
 void *recv_thread(void* args){
@@ -73,7 +73,8 @@ void *recv_thread(void* args){
 				in_user=0;
 				memset(recv_buf,'/0',sizeof(recv_buf));
 				break;
-			if(strcmp(recv_buf,"/q")==0)
+			}
+			if(strcmp(recv_buf,"/q")==0){
 				in_user=1;
 				printf("Another user is out of here\n");
 				memset(recv_buf, '\0',sizeof(recv_buf));
@@ -82,5 +83,6 @@ void *recv_thread(void* args){
 			printf("%s :s%s\n",RECV,recv_buf);
 			memset(recv_buf,'\0',sizeof(recv_buf));
 		}
+	}
 }
 

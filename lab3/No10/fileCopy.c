@@ -7,7 +7,7 @@
 #include <semaphore.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <errno.h>    
 
 #define SHMSIZE 4096
 #define SEMNAME "/my_sem"
@@ -16,7 +16,7 @@
 void p(sem_t *semd);
 void v(sem_t *semd);
 
-void main(int argc, char* argv){
+void main(int argc, char* argv[]){
 
     FILE *fp, *copy_fp;
     char *path = argv[1];
