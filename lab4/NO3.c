@@ -11,7 +11,7 @@ sem_t buffer_slot;
 sem_t items;
 sem_t mutex; // 이진 세마포어를 위한 변수 생성
 // Buffer 최대값이 1보다 클 경우에는 Race Condition 발생해 데이터가 덮어씌여질 수 있기 때
-문에 mutex 생성. (상호 배제 고려)
+//문에 mutex 생성. (상호 배제 고려)
 void *readers(void *arg); // 소비자 함수 선언부
 void *writers(void *arg); // 생산자 함수 선언부
 int main(void)
