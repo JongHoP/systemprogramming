@@ -1,267 +1,277 @@
-#include <unistd.h>
 #include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <string.h>
 #include <stdlib.h>
-#include <sys/wait.h>
+#include <sys/types.h>
+#include <fcntl.h>
 #include <signal.h>
 
-#define EOL			1 // ÁÙÀÇ ³¡
-#define ARG			2 // Á¤»óÀû ÀÎ¼ö
-#define	AMPERSAND	3
-#define SEMICOLON	4
-#define PIPE		5 // ÆÄÀÌÇÁ ¸í·ÉÀÎ °æ¿ì
+void print_list(int length,char *buf[]);
 
-#define MAXARG		512 // ¸í·ÉÀÎ¼öÀÇ ÃÖ´ë¼ö
-#define	MAXBUF		512 // ÀÔ·ÂÁÙÀÇ ÃÖ´ë±æÀÌ
-#define MAXPIPE		5
+int main(){
+    char str[1024];
+    char *buffer[255];
+    int buf_leng = 1;
+    int str_len;
+    int t;
+    int fd;
+    char *command[16];
+    char *pip_command[16][16];
+    char *cur_dir;
+    int cmd_num = 0;
+    int fdr[2];
+    int fdd = 0;
+    int p;
+    int type = 0;
+    int semi = 0;
+    int semi_pre_buf_leng =0;
+    char his_buf[256];
+    char c = '\n';
+    pid_t pid;
+    int his;
+    int bck_gnd = 0;
 
-#define	FOREGROUND	0 // Æ÷¾î±×¶ó¿îµå ½ÇÇà
-#define	BACKGROUND	1 // ¹é±×¶ó¿îµå ½ÇÇà
+    // signal(SIGINT,SIG_IGN);
+    // signal(SIGQUIT,SIG_IGN);
+    // signal(SIGTSTP,SIG_IGN);
+    while(1){
+        
+        type = 0;
+        buf_leng = 1;
+        cmd_num = 0;
+        for(int i=0 ; i < 1024 ; i++) str[i]='\0'; //initialization of str
+        if(semi != 0){
+            // printf("ì–´ì„œì˜¤ì‹­ì‹œì˜¤! ì„¸ë¯¸ì›”ë“œì…ë‹ˆë‹¤\n");
+            for(int i = semi+1; i < semi_pre_buf_leng; i++){
+                strcat(str,buffer[i]);
+                strcat(str," ");
+            }
+            semi = 0;
+            semi_pre_buf_leng = 0;
+            // printf("%s",str);
+        }
+        else {
+            fgets(str,sizeof(str),stdin);
+            his = open("history",O_CREAT|O_RDWR|O_APPEND);
+            write(his,str,strlen(str));
+            // write(his,&c,1);
+            close(his);
+            
+        }
+        for(int i=0; i < 15; i++) { 
+            command[i] = NULL;
+            buffer[i] = malloc(sizeof(char) * 20);
+        }
+        for(int i=0; i< 16;i++){
+            for(int k = 0; k<16;k++)
+                pip_command[i][k] =malloc(sizeof(char) * 20);
+        }
+        
+        str[strlen(str) -1] = '\0';
+        str_len = strlen(str);
+        // printf("ì™œ ë‚˜ì™”ë‹¤ê°€ ì•ˆë‚˜ì™“ë‹¤ê°€.. ã…œã… ã…œã… ã…œ ê¸¸ì´:%d\n",str_len);
+        // print_list(buf_leng,buffer);
+        for(int i=0; i< strlen(str);i++){
+            // printf("%c",str[i]);
+            switch(str[i]){
+                case ' ':
+                    if(strcmp(buffer[buf_leng],"") != 0)
+                        buf_leng++;
+                    break;
+                case '>':
+                    if(buf_leng > 0 && strcmp(buffer[buf_leng-1],">")== 0){
+                        strcat(buffer[buf_leng-1],">");
+                    }
+                    else{
+                        if(strcmp(buffer[buf_leng],"") != 0)
+                            buf_leng++;
+                        strcat(buffer[buf_leng], ">");
+                        buf_leng++;
+                    }
+                    break;
+                case '|' :
+                    if(strcmp(buffer[buf_leng-1],">")== 0){
+                        strcat(buffer[buf_leng-1],"|");
+                    }
+                    else{
+                        if(strcmp(buffer[buf_leng],"") != 0)
+                            buf_leng++;
+                        strcat(buffer[buf_leng], "|");
+                        buf_leng++;
+                        type = 1;
+                        break;
+                    }
+                    break;
+                case '<' :
+                    if(strcmp(buffer[buf_leng],"") != 0)
+                        buf_leng++;
+                    strcat(buffer[buf_leng], "<");
+                    buf_leng++;
+                    break;
+                case '&' :
+                    if(strcmp(buffer[buf_leng],"") != 0)
+                        buf_leng++;
+                    strcat(buffer[buf_leng], "&");
+                    buf_leng++;
+                    break;
+                case ';' :
+                    if(strcmp(buffer[buf_leng],"") != 0)
+                        buf_leng++;
+                    strcat(buffer[buf_leng], ";");
+                    semi = buf_leng;
+                    buf_leng++;
+                    break;
+                
+                default:
+                    // printf("%d",i);
+                    strncat(buffer[buf_leng],&str[i],1);
+                    // printf("%s",buffer[buf_leng]);
+                    break;
+            }
+            
+        }
 
-static char inpbuf[MAXBUF], tokbuf[2 * MAXBUF], *ptr = inpbuf, *tok = tokbuf; // ÇÁ·Î±×·¥ ¹öÆÛ ¹× ÀÛ¾÷¿ë Æ÷ÀÎÅÍ
-static char special[] = { ' ', '\t', '&', ';', '\n', '\0' }; // ÀÏ¹İÀûÀÎ ¸í·É¾î ¹®ÀÚ°¡ ¾Æ´Ñ °æ¿ì
-char *prompt = "Command> "; // ÇÁ·ÒÇÁÆ®
-static struct sigaction act;
+        // if(strcmp(buffer[buf_leng-1],"hello") == 0) printf("please..");
+        buf_leng++;
+        if(semi != 0){
+            semi_pre_buf_leng = buf_leng;
+            buf_leng = semi;
+        }
+        // printf("ì´ ë°‘ì—ê±°ëŠ” ì™œ ì‹¤í–‰ì´ ì•ˆë˜ëŠ”ê±°ì£ ..\n");
+        // print_list(buf_leng,buffer);
+        switch(type){
+            case 0 :
+                if((pid = fork() )== 0){
+                    // printf("ë§›ìˆëŠ” í¬í¬ë¥¼ ì„±ê³µì‹œì¼°ìŠµë‹ˆë‹¤\n");
+                    t = 1;
+                    while(t < buf_leng){
+                        if(strcmp(buffer[t],">")== 0){
+                            // printf(">ê°€ ì¨ì ¸ìˆìœ¼ë‹ˆ ì—¬ê¸°ë¡œ ì˜¤ì‹œì§€ìš”\n íŒŒì¼ ì„±í•¨ì´ %sê°€ ë§ëŠ” ì§€ìš”?",buffer[t+1]);
+                            fd = open(buffer[t+1],O_CREAT | O_RDWR|O_TRUNC);
+                            dup2(fd,1);
+                            close(fd);
+                            t += 2;
+                        }
+                        else if(strcmp(buffer[t],"<")== 0){
+                            fd = open(buffer[t+1],O_RDWR);
+                            
+                            dup2(fd,0);
+                            close(fd);
+                            // command[cmd_num] = buffer[t+1];
+                            // cmd_num++;
+                            t += 2;
+                        }
+                        else if(strcmp(buffer[t],">>")== 0){
+                            fd = open(buffer[t+1],O_CREAT|O_RDWR|O_APPEND);
+                            dup2(fd,1);
+                            close(fd);
+                            t += 2;
+                            
+                        }
+                        else if(strcmp(buffer[t],">|")== 0){
+                            fd = open(buffer[t+1],O_CREAT | O_RDWR|O_TRUNC);
+                            dup2(fd,1);
+                            close(fd);
 
-int userin(char*);
-int gettok(char**);
-int inarg(char);
-int procline(void);
-int runcommand(char**, int, int);
-int join(char**, char**);
-void sepstring(char**, char**, char**);
-int fatal(char *s) { perror(s);	exit(1); }
-int userin(char *p) { // ÇÁ·ÒÇÁÆ®¸¦ ÇÁ¸°Æ®ÇÏ°í ÇÑ ÁÙ ÀĞÀ½
-	int c, count;
-	// ÇÁ·Î±×·¥ ¹öÆÛ¿Í ÀÛ¾÷¿ë Æ÷ÀÎÅÍ ÃÊ±âÈ­
-	ptr = inpbuf;
-	tok = tokbuf;
+                            t += 2;
+                        }
+                        else if(strcmp(buffer[t],"&")== 0){
+                            bck_gnd = 0;
+                            t += 2;
+                        }
+                        else{
+                            command[cmd_num] = buffer[t];
+                            cmd_num++;
+                            t++;
+                            
+                        }
+                    }
+                    // printf("ì™œ ì‹¤í–‰ì´ ì•ˆë ê¹Œìš”?\n");
+                    // printf("ì»¤ë§¨ë“œ1ë²ˆì§¸ì˜ ê°’ì€ ì´ê²ë‹ˆë‹¤.%s\n",command[1]);
+                    if(strcmp(command[0],"cd")==0){//ë‚´ì¥ëª…ë ¹ì–´ cd
+                        chdir(command[1]);//í˜„ì¬ ë””ë ‰í† ë¦¬ ë³€ê²½
+                    }
+                    else if(strcmp(command[0],"history")== 0){
+                        his = open("history",O_CREAT|O_RDWR);
+                        read(his,his_buf,255);
+                        printf("%s",his_buf);
+                        bck_gnd = 1;
+                    }
+                    else{
+                        execvp(command[0],command);
+                        exit(0);
+                    }
+                    
+                }
+                break;
+            //pipe
+            case 1 :
+                // if(fork() == 0){
+                    // printf("ë§›ìˆëŠ” íŒŒì´í”„ í¬í¬ë¥¼ ì„±ê³µì‹œì¼°ìŠµë‹ˆë‹¤\n");
+                    t = 1;
+                    p = 0;
+                    while(t < buf_leng){
+                        if(strcmp(buffer[t],"|") == 0){
+                            pip_command[cmd_num][p] = NULL;
+                            cmd_num++;
+                            t++;
+                            p = 0;
+                        }
+                        else{
+                            
+                            strcat(pip_command[cmd_num][p],buffer[t]);
+                            // printf("í˜„ì¬ íŒŒì´í”„ ì»¤ë§¨ë“œ%d %dì— %së¥¼ ë„£ê³  ì‹¶ë‹¤.. ë¯¸ì¹ ë“¯ì´\n ",cmd_num,p,buffer[t]);
+                            // printf("ë„£ì–´ì¡ŒëŠ”ì§€ í™•ì¸í•´ë³¼ê¹Œ? -> %s\n",pip_command[cmd_num][p]);
+                            p++;
+                            t++;
+                        }
 
-	printf("%s", p); // ÇÁ·ÒÇÁÆ® Ç¥½Ã
-
-	count = 0; // ÀÔ·ÂÀÇ Å©±â
-
-	while (1) {
-		if ((c = getchar()) == EOF) // ÇÑ ÁÙÀ» ÀÔ·Â ¹ŞÀ½
-			return EOF;
-
-		if (count < MAXBUF)
-			inpbuf[count++] = c; // ´Ü¾î ÇÏ³ª¾¿ ´ëÀÔ
-
-		if (c == '\n' && count < MAXBUF) {
-			inpbuf[count] = '\0'; // ¹®ÀåÀÇ ³¡¿¡ ³ÎÀ» ³ÖÀ½
-			return count;
-		}
-
-		if (c == '\n') { // ÁÙÀÌ ³Ê¹« ±æ¸é Àç½ÃÀÛ
-			printf("smallsh: input line too long\n");
-			count = 0;
-			printf("%s", p);
-		}
-	}
+                    }
+                    pip_command[cmd_num][p] = NULL;
+                    p = 0;
+                    int i;
+                    for(i=0; i<cmd_num; i++){
+                        pipe(fdr);
+                        switch(fork()){
+                            case -1: perror("fork error"); break;
+                            case  0:
+                                if(close(1) == -1) perror("close1");
+                                dup(fdr[1]);
+                                if(close(fdr[0]) == -1 || close(fdr[1]) == -1){
+                                    perror("close2");
+                                }
+                                execvp(pip_command[i][0], pip_command[i]);
+                                printf("cmd not found");
+                                exit(0);
+                            default: 
+                                close(fdr[1]);
+                                dup2(fdr[0], 0);
+                        }
+                    }
+                    execvp(pip_command[i][0], pip_command[i]);
+                break;
+        
+            default :
+                if(!bck_gnd){
+                    wait(NULL);
+                    fflush(stdout);
+                }
+                else{
+                    printf("BACKGROUND PID: %d\n",getpid());
+                    bck_gnd = 0;
+                    break;
+                }
+        
+        }
+        // for(int i=0; i < 15; i++) { free(buffer[i]);}
+    }
 }
 
-int gettok(char **outptr) {  // ÅäÅ«À» °¡Á®¿Í¼­ tokbuf¿¡ ³ÖÀ½
-	int type;
 
-	*outptr = tok; // outptr ¹®ÀÚ¿­À» tok·Î ÁöÁ¤
-
-	while (*ptr == ' ' || *ptr == '\t') // ÅäÅ«À» Æ÷ÇÔÇÑ ¹öÆÛ·ÎºÎÅÍ °ø¹é Á¦°Å
-		ptr++;
-
-	*tok++ = *ptr; // ÅäÅ« Æ÷ÀÎÅÍ¸¦ ¹öÆÛ³» Ã¹ ÅäÅ«À¸·Î ÁöÁ¤
-
-	switch (*ptr++) { // ¹öÆÛ³»ÀÇ ÅäÅ«¿¡ µû¶ó À¯Çü º¯¼ö¸¦ ÁöÁ¤, ÆÄÀÌÇÁ(|) Ãß°¡
-	case '\n':
-		type = EOL;
-		break;
-	case '&':
-		type = AMPERSAND;
-		break;
-	case ';':
-		type = SEMICOLON;
-		break;
-	case '|':
-		type = PIPE;
-		break;
-	default:
-		type = ARG;
-		while (inarg(*ptr)) // À¯È¿ÇÑ º¸Åë¹®ÀÚµéÀ» °è¼Ó ÀĞÀ½
-			*tok++ = *ptr++;
-	}
-
-	*tok++ = '\0';
-	return type;
-}
-
-int inarg(char c) { // ÇÑ ¹®ÀÚ°¡ º¸Åë¹®ÀÚÀÎÁö °Ë»ç
-	char *wrk;
-
-	for (wrk = special; *wrk; wrk++) {
-		if (c == *wrk)
-			return 0;
-	}
-
-	return 1;
-}
-
-int procline(void) { // ÀÔ·ÂÁÙ Ã³¸®
-	char *arg[MAXARG + 1]; // runcommand¸¦ À§ÇÑ Æ÷ÀÎÅÍ ¹è¿­
-	int toktype; // ¸í·É³» ÅäÅ« À¯Çü
-	int narg; // Áö±İ±îÁö ÀÎ¼ö ¼ö
-	int type1;  //FOREGROUND ¶Ç´Â BACKGROUND
-	int type2 = 0; // ÆÄÀÌÇÁ Å¸ÀÔ
-
-	narg = 0;
-
-	while (1) { // ¹«ÇÑ·çÇÁ
-		switch (toktype = gettok(&arg[narg])) { // ÅäÅ« À¯Çü¿¡ µû¶ó Çàµ¿À» ÇÔ
-		case ARG:
-			if (narg < MAXARG)
-				narg++;
-			break;
-		case EOL:
-		case SEMICOLON:
-		case AMPERSAND:
-			if (toktype == AMPERSAND) // '&'ÀÌ¸é ¹é±×¶ó¿îµå ¾Æ´Ï¸é Æ÷¾î±×¶ó¿îµå
-				type1 = BACKGROUND;
-			else
-				type1 = FOREGROUND;
-
-			if (narg != 0) {
-				arg[narg] = NULL;
-				if (strcmp(arg[0], "logout") == 0) // ·Î±×¾Æ¿ôÀÎ °æ¿ì -1 ¸®ÅÏ
-					return -1;
-				runcommand(arg, type1, type2); // ¸í·É¾î ½ÇÇà
-			}
-
-			if (toktype == EOL) // ÇÑ ÁÙÀÌ ³¡³ª¸é 0 ¸®ÅÏ
-				return 0;
-			narg = 0;
-			break;
-		case PIPE:
-			type2 = toktype; // ÆÄÀÌÇÁ Å¸ÀÔÀÓÀ» ¼³Á¤
-			if (narg < MAXARG) // ÀÏ´Ü ARGÃ³·³ ¹®ÀÚ¸¦ ÀĞÀ½
-				narg++;
-			break;
-		}
-	}
-}
-
-int runcommand(char **cline, int where, int pipe) { // ¸í·É ¼öÇà
-	pid_t pid;
-	int status;
-
-	if (strcmp(cline[0], "cd") == 0) { // cd ¸í·É¾îÀÎ °æ¿ì
-		if (chdir(cline[1]) == -1) { // µğ·ºÅä¸®¸¦ ¹Ù²ãÁÖ°í ¸®ÅÏ
-			fatal("change directory fail");
-		}
-		return 0;
-	}
-
-	switch (pid = fork()) { // ÇÁ·Î¼¼½º fork
-	case -1:
-		fatal("smallsh");
-		return -1;
-	case 0: // ÀÚ½ÄÄÚµå
-		if (where == BACKGROUND) { // ¹é±×¶ó¿îµåÀÌ¸é ½Ã±×³Î ¹«½Ã
-			act.sa_handler = SIG_IGN;
-			sigaction(SIGINT, &act, NULL);
-			sigaction(SIGQUIT, &act, NULL);
-		} else { // Æ÷¾î±×¶ó¿îµåÀÌ¸é ½Ã±×³Î ´Ù½Ã È¿·Â »ı±è
-			act.sa_handler = SIG_DFL;
-			sigaction(SIGINT, &act, NULL);
-			sigaction(SIGQUIT, &act, NULL);
-		}
-
-		if (pipe == PIPE) { // ÆÄÀÌÇÁ ¸í·ÉÀÎ °æ¿ì
-			char* tmp[MAXPIPE] = { 0 };
-			char* tmp2[MAXPIPE] = { 0 };
-			sepstring(tmp, tmp2, cline); // ¹®ÀÚ¿­À» tmp¿Í tmp2·Î ºĞ¸®
-			join(tmp, tmp2); // ÆÄÀÌÇÁ ½ÇÇà
-
-			exit(1);
-		}
-		execvp(*cline, cline); // ¸í·É¾î ½ÇÇà
-		fatal(*cline);
-		exit(1);
-	}
-	// ºÎ¸ğÄÚµå
-	if (where == BACKGROUND) { // ¸¸ÀÏ ¹é±×¶ó¿îµåÀÌ¸é ½Äº°ÀÚ¸¦ ÇÁ¸°Æ®
-		printf("[Process id %d]\n", pid);
-		return 0;
-	}
-
-	if (waitpid(pid, &status, 0) == -1)
-		return -1;
-	else
-		return status;
-}
-
-int join(char *com1[], char *com2[]) { // ÆÄÀÌÇÁ ½ÇÇà
-	int p[2], status;
-	char* tmp[MAXPIPE] = { 0 };
-	char* tmp2[MAXPIPE] = { 0 };
-
-	if (pipe(p) == -1) // ÆÄÀÌÇÁ »ı¼º
-		fatal("pipe call in join");
-
-	switch (fork()) { //´Ù¸¥ ÇÁ·Î¼¼½º »ı¼º
-	case -1: // ¿À·ù
-		fatal("2nd fork call in join");
-	case 0:
-		dup2(p[1], 1); // Ç¥ÁØ Ãâ·ÂÀÌ ÆÄÀÌÇÁ·Î °¡°Ô ÇÔ
-		close(p[0]);
-		close(p[1]);
-		execvp(com1[0], com1);
-		fatal("1st execvp call in join");
-	default:
-		dup2(p[0], 0); //Ç¥ÁØ ÀÔ·ÂÀÌ ÆÄÀÌÇÁ·ÎºÎÅÍ ¿À°Ô ÇÔ
-		close(p[0]);
-		close(p[1]);
-
-		sepstring(tmp, tmp2, com2); // ¸í·É¾î ºĞ¸® ÇØÁÜ
-
-		if (tmp2[0] == 0) { // ¸¶Áö¸· ¸í·É¾î°¡ ¾øÀ¸¸é ÆÄÀÌÇÁ ³¡ÀÓ
-			execvp(com2[0], com2);
-			fatal("2nd execvp call in join");
-		} else {
-			join(tmp, tmp2); // Àç±Í½ÇÇàÀ¸·Î ÆÄÀÌÇÁ°¡ ¿©·¯°³ÀÎ °ÍÀ» Áö¿ø
-		}
-	}
-}
-void sepstring(char *com1[], char *com2[], char *str[]) {
-	int j = 0;
-	for (int i = 0; str[i] != 0; i++) { // ¶ç¾î¾²±â·Î ±¸ºĞµÈ str¿¡¼­ ÆÄÀÌÇÁ¸¦ ±¸ºĞ
-		char *tmp = str[i]; // tmp¿¡ strÀÇ ¿ä¼Ò¸¦ ÇÏ³ª ÀúÀå
-		while (1) {
-			if (*tmp == '|') { // ÀúÀåÇÑ °ÍÀÌ |ÀÎ °æ¿ì
-				j = i + 1;
-				while (str[j]) { // | µÚ¿¡ ÀÖ´Â ¸í·É¾î¸¦ com2¿¡ ÀúÀå
-					com2[j - i - 1] = str[j];
-					j++;
-				}
-				com2[j - i - 1] = '\0'; // ¹®ÀÚ¿­ÀÇ ³¡¿¡ ³ÎÀ» ³ÖÀ½
-				return;
-			}
-			if (*tmp++ == '\0') // ¹®ÀÚ°¡ ³¡³ª¸é Á¾·á
-				break;
-		}
-		com1[i] = str[i]; // com1¿¡ ¹®ÀÚ¿­ ÀúÀå
-		com1[i + 1] = 0;
-	}
-}
-
-int main(void) {
-	act.sa_handler = SIG_IGN; // ½Ã±×³ÎÀ» ¼ö½ÅÇßÀ» ¶§ ¹«½Ã
-	sigaction(SIGINT, &act, NULL);
-	sigaction(SIGQUIT, &act, NULL);
-	while (userin(prompt) != EOF) { // ¸í·É¾î ½ÇÇà
-		act.sa_handler = SIG_IGN;
-		sigaction(SIGINT, &act, NULL);
-		sigaction(SIGQUIT, &act, NULL);
-		if (procline() == -1)
-			break;
-	}
-
-	return 0;
+void print_list(int length,char *buf[]){
+    for(int i = 1 ; i < length ; i++){
+        printf("[%s]\t", buf[i]);
+    }
+    printf("\n");
 }
