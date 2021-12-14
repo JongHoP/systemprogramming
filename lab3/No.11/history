@@ -1,0 +1,22 @@
+pwd
+ls
+clear
+ls
+cd ..
+ls
+cd..
+pwd
+clear
+cdNo.11
+cd No.11
+ls
+ls
+clear
+ls
+cat simplesh.c | grep "if
+ccat simplesh.c
+cat myshell.c
+clear
+grep "if" myshell.c
+cls
+clear

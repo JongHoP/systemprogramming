@@ -1,0 +1,25 @@
+pwd
+pwd
+pwd
+mkdir smshmkdir
+ls
+ln test2 test2link
+ln ./test2 test2link
+cp test2 cptest2
+ls
+clear
+ls
+clear
+mv test2 test3
+ls
+ls
+ls
+claer
+ls
+pwd
+pwd
+pwd
+"
+cat simplesh.c
+
+cat myshell.c | grep "if"
